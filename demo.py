@@ -114,6 +114,15 @@ if __name__ == '__main__':
     # Setup renderer for visualization
     renderer = Renderer(focal_length=constants.FOCAL_LENGTH, img_res=constants.IMG_RES, faces=smpl.faces)
 
+    # write prediction result to json file
+    output_json = {
+        "dataset:": "COCO2017-val",
+        "name": args.img.split("/")[-1],
+        "pred_betas": None,
+        "body_pose": None,
+        "global_orient": None,
+        "camera_translation": None,
+    }
 
     # Preprocess input image and generate predictions
     img, norm_img = process_image(args.img, args.bbox, args.openpose, input_res=constants.IMG_RES)
@@ -122,19 +131,24 @@ if __name__ == '__main__':
         pred_output = smpl(betas=pred_betas, body_pose=pred_rotmat[:,1:], global_orient=pred_rotmat[:,0].unsqueeze(1), pose2rot=False)
         pred_vertices = pred_output.vertices
         # obtain pose parameters
-        print("pred_rotmat:",pred_rotmat.shape)
-        print("pred_betas:",pred_betas.shape)
-        print("pred_camera:",pred_camera.shape)
-        print("\nbody_pose:", pred_rotmat[:,1:].shape)
-        print("global_orient:", pred_rotmat[:,0].unsqueeze(1).shape)
-        print("joint:", pred_output.joints.shape)
+        # print("pred_rotmat:",pred_rotmat.shape)
+        # print("pred_betas:",pred_betas.shape)
+        # print("pred_camera:",pred_camera.shape)
+        # print("\nbody_pose:", pred_rotmat[:,1:].shape)
+        # print("global_orient:", pred_rotmat[:,0].unsqueeze(1).shape)
+        # print("joint:", pred_output.joints.shape)
+        # collect
+        output_json["pred_betas"] = pred_betas.cpu().tolist() #numpy()
+        output_json["body_pose"] = pred_rotmat[:,1:].cpu().tolist() #numpy()
+        output_json["global_orient"] = pred_rotmat[:,0].unsqueeze(1).cpu().tolist() #numpy()
 
     # Calculate camera parameters for rendering
     camera_translation = torch.stack([pred_camera[:,1], pred_camera[:,2], 2*constants.FOCAL_LENGTH/(constants.IMG_RES * pred_camera[:,0] +1e-9)],dim=-1)
     camera_translation = camera_translation[0].cpu().numpy()
     pred_vertices = pred_vertices[0].cpu().numpy()
     img = img.permute(1,2,0).cpu().numpy()
-    print("camera_translation:",camera_translation.shape)
+    # print("camera_translation:",camera_translation.shape)
+    output_json["camera_translation"] = camera_translation.tolist()
 
     # Render parametric shape
     img_shape = renderer(pred_vertices, camera_translation, img)
@@ -152,3 +166,5 @@ if __name__ == '__main__':
     # Save reconstructions
     cv2.imwrite(outfile + '_shape.png', 255 * img_shape[:,:,::-1])
     cv2.imwrite(outfile + '_shape_side.png', 255 * img_shape_side[:,:,::-1])
+    with open(outfile+"_output.json", 'w', encoding='utf-8') as f:
+        json.dump(output_json, f, indent=4)
