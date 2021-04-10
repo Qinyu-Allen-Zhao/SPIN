@@ -31,16 +31,6 @@ parser.add_argument("--annotation", required=True, help="Path to json file of an
 parser.add_argument("--imgs_folder", required=True, help="Path to the folder containing COCO imgs")
 parser.add_argument("--output_folder", default="COCO_SPINoutput", help="Path to the folder to put output jsons")
 
-# write transferred prediction result to json file
-output_json_template = {
-    "dataset:": None,
-    "name": None,
-    "pred_betas": None,
-    "body_pose": None,
-    "global_orient": None,
-    "camera_translation": None,
-    "bbox_center_percent": None,
-}
 def format_bbox(bbox):
     """Get center and scale of bounding box from bounding box annotations.
     The expected format is [top_left(x), top_left(y), width, height].
@@ -111,6 +101,15 @@ if __name__ == '__main__':
             single_imgids.remove(annot["image_id"])
             crowd_imgids.add(annot["image_id"])
 
+    output_json_template = {
+        "dataset": "COCO-" + args.imgs_folder.split("/")[-1],
+        "name": None,
+        "betas": None,
+        "poses": None, # expect to be [[w,x,y,z]]
+        "camera_trans": None,
+        "bbox_center_percent": None, # [x,y] relative to img bottom-left point
+    }
+
     # second pass
     for annot in COCO_annotations:
         if annot["category_id"] != 1: continue
@@ -120,8 +119,15 @@ if __name__ == '__main__':
         if annot["image_id"] in single_imgids:
             img_name = imgid_name[annot["image_id"]]
             img_path = os.path.join(args.imgs_folder, img_name)
-            img, norm_img = process_image(img_path, format_bbox(annot["bbox"]))
+            formatted_bbox = format_bbox(annot["bbox"])
+            img, norm_img = process_image(img_path, formatted_bbox)
 
             with torch.no_grad():
                 pred_rotmat, pred_betas, pred_camera = model(norm_img.to(device))
+                output_json = dict(output_json_template)
+                output_json["name"] = img_name
+                output_json["betas"] = pred_betas.cpu().tolist()[0]
+                output_json["poses"] = rotMat2Quat(pred_rotmat.cpu().numpy())
+                output_json["camera_trans"] = torch.stack([pred_camera[:,1], pred_camera[:,2], 2*constants.FOCAL_LENGTH/(constants.IMG_RES * pred_camera[:,0] +1e-9)],dim=-1)[0].cpu().tolist()
+                output_json["bbox_center_percent"] = [formatted_bbox[0][0]/w, 1-formatted_bbox[0][1]/h]
 #
