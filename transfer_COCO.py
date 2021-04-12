@@ -1,5 +1,5 @@
 """
-Given provided COCO dataset(imgs and ground truth), fit SPIN model
+Given provided COCO dataset(imgs and ground truth), fit SPIN model,
 Then convert the output into a format that is ready for Unity (LHS).
 
 Note: For now only single person images are considered.
@@ -58,9 +58,9 @@ def process_image(img_path, bbox, input_res=224):
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    if (not os.path.exists(args.output_path)): os.mkdir(args.output_path)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
     # Load pretrained model
     model = hmr(config.SMPL_MEAN_PARAMS).to(device)
     checkpoint = torch.load(args.checkpoint)
@@ -83,13 +83,19 @@ if __name__ == '__main__':
     # mapping img ids to name
     imgid_name = dict()
     print("Mapping COCO image id to image name...")
-    for img in tqdm(COCO_imgs):
+    for img in COCO_imgs:
         imgid_name[img["id"]] = img["file_name"]
+    # mapping img ids to dimentions
+    imgid_dims = dict()
+    print("Mapping COCO image id to image dimention...")
+    for img in COCO_imgs:
+        imgid_dims[img["id"]] = (img["width"], img["height"])
 
     # select suitable samples
+    print("First pass: find single imgs and crowd images...")
     single_imgids = set()
     crowd_imgids = set()
-    for annot in COCO_annotations:
+    for annot in tqdm(COCO_annotations):
         if annot["category_id"] != 1: continue
         if annot["iscrowd"] == 1: continue
         if annot["num_keypoints"] == 0: continue
@@ -111,7 +117,8 @@ if __name__ == '__main__':
     }
 
     # second pass
-    for annot in COCO_annotations:
+    print("Second pass: feed to SPIN and store output...")
+    for annot in tqdm(COCO_annotations):
         if annot["category_id"] != 1: continue
         if annot["iscrowd"] == 1: continue
         if annot["num_keypoints"] == 0: continue
@@ -124,10 +131,16 @@ if __name__ == '__main__':
 
             with torch.no_grad():
                 pred_rotmat, pred_betas, pred_camera = model(norm_img.to(device))
+                w, h = imgid_dims[annot["image_id"]]
                 output_json = dict(output_json_template)
                 output_json["name"] = img_name
                 output_json["betas"] = pred_betas.cpu().tolist()[0]
                 output_json["poses"] = rotMat2Quat(pred_rotmat.cpu().numpy())
                 output_json["camera_trans"] = torch.stack([pred_camera[:,1], pred_camera[:,2], 2*constants.FOCAL_LENGTH/(constants.IMG_RES * pred_camera[:,0] +1e-9)],dim=-1)[0].cpu().tolist()
                 output_json["bbox_center_percent"] = [formatted_bbox[0][0]/w, 1-formatted_bbox[0][1]/h]
+
+                # write output
+                with open(os.path.join(args.output_folder, img_name+".json"), "w", encoding="utf-8") as f:
+                    json.dump(output_json, f)
+                    break
 #
