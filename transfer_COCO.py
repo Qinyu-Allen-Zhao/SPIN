@@ -6,6 +6,7 @@ Note: For now only single person images are considered.
 
 sample:
 python3 transfer_COCO.py --checkpoint=data/model_checkpoint.pt --annotation=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/annotations/person_keypoints_val2017.json --imgs_folder=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/images/val2017
+python3 transfer_COCO.py --checkpoint=data/model_checkpoint.pt --annotation=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/annotations/person_keypoints_train2017.json --imgs_folder=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/images/train2017
 
 """
 
@@ -24,6 +25,7 @@ import constants
 from tqdm import tqdm
 from collections import Counter
 import os
+from json_spin2unity import rotMat2Quat
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint', required=True, help='Path to pretrained checkpoint')
@@ -35,6 +37,7 @@ def format_bbox(bbox):
     """Get center and scale of bounding box from bounding box annotations.
     The expected format is [top_left(x), top_left(y), width, height].
     """
+    bbox = np.array(bbox)
     ul_corner = bbox[:2]
     center = ul_corner + 0.5 * bbox[2:]
     width = max(bbox[2], bbox[3])
@@ -58,7 +61,7 @@ def process_image(img_path, bbox, input_res=224):
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    if (not os.path.exists(args.output_path)): os.mkdir(args.output_path)
+    if (not os.path.exists(args.output_folder)): os.mkdir(args.output_folder)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     # Load pretrained model
@@ -92,7 +95,7 @@ if __name__ == '__main__':
         imgid_dims[img["id"]] = (img["width"], img["height"])
 
     # select suitable samples
-    print("First pass: find single imgs and crowd images...")
+    print("\nFirst pass: find single imgs and crowd images...")
     single_imgids = set()
     crowd_imgids = set()
     for annot in tqdm(COCO_annotations):
@@ -106,6 +109,10 @@ if __name__ == '__main__':
         elif annot["image_id"] in single_imgids:
             single_imgids.remove(annot["image_id"])
             crowd_imgids.add(annot["image_id"])
+        else:
+            single_imgids.add(annot["image_id"])
+    print("Number single images:",len(single_imgids))
+    print("Number crowd images:",len(crowd_imgids))
 
     output_json_template = {
         "dataset": "COCO-" + args.imgs_folder.split("/")[-1],
@@ -117,16 +124,20 @@ if __name__ == '__main__':
     }
 
     # second pass
-    print("Second pass: feed to SPIN and store output...")
+    print("\nSecond pass: feed to SPIN and store output...")
     for annot in tqdm(COCO_annotations):
         if annot["category_id"] != 1: continue
         if annot["iscrowd"] == 1: continue
         if annot["num_keypoints"] == 0: continue
+        # print("!")
 
         if annot["image_id"] in single_imgids:
             img_name = imgid_name[annot["image_id"]]
             img_path = os.path.join(args.imgs_folder, img_name)
+            img_name = img_name.split(".")[0] # remove jpg affix
+            if img_name != "000000000785": continue
             formatted_bbox = format_bbox(annot["bbox"])
+            # formatted_bbox = format_bbox([0,0,*imgid_dims[annot["image_id"]]])
             img, norm_img = process_image(img_path, formatted_bbox)
 
             with torch.no_grad():
@@ -135,12 +146,13 @@ if __name__ == '__main__':
                 output_json = dict(output_json_template)
                 output_json["name"] = img_name
                 output_json["betas"] = pred_betas.cpu().tolist()[0]
-                output_json["poses"] = rotMat2Quat(pred_rotmat.cpu().numpy())
+                output_json["poses"] = rotMat2Quat(pred_rotmat[0].cpu().numpy())
                 output_json["camera_trans"] = torch.stack([pred_camera[:,1], pred_camera[:,2], 2*constants.FOCAL_LENGTH/(constants.IMG_RES * pred_camera[:,0] +1e-9)],dim=-1)[0].cpu().tolist()
                 output_json["bbox_center_percent"] = [formatted_bbox[0][0]/w, 1-formatted_bbox[0][1]/h]
 
                 # write output
                 with open(os.path.join(args.output_folder, img_name+".json"), "w", encoding="utf-8") as f:
-                    json.dump(output_json, f)
+                    print("Writing result json:"+img_name)
+                    json.dump(output_json, f, indent=4)
                     break
 #
