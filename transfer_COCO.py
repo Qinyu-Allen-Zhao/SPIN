@@ -61,7 +61,11 @@ def process_image(img_path, bbox, input_res=224):
 
 if __name__ == '__main__':
     args = parser.parse_args()
+
+    # create output folder if needed
+    dataset_name = "COCO-" + args.imgs_folder.split("/")[-1]
     if (not os.path.exists(args.output_folder)): os.mkdir(args.output_folder)
+    if (not os.path.exists(os.path.join(args.output_folder, dataset_name))): os.mkdir(os.path.join(args.output_folder, dataset_name))
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     # Load pretrained model
@@ -85,7 +89,7 @@ if __name__ == '__main__':
 
     # mapping img ids to name
     imgid_name = dict()
-    print("Mapping COCO image id to image name...")
+    print("\nMapping COCO image id to image name...")
     for img in COCO_imgs:
         imgid_name[img["id"]] = img["file_name"]
     # mapping img ids to dimentions
@@ -115,12 +119,18 @@ if __name__ == '__main__':
     print("Number crowd images:",len(crowd_imgids))
 
     output_json_template = {
-        "dataset": "COCO-" + args.imgs_folder.split("/")[-1],
         "name": None,
         "betas": None,
         "poses": None, # expect to be [[w,x,y,z]]
         "camera_trans": None,
+        "area": None,
         "bbox_center_percent": None, # [x,y] relative to img bottom-left point
+    }
+
+    outputs = []
+    outputs_json = {
+        "dataset": dataset_name,
+        "SPIN_outputs": None,
     }
 
     # second pass
@@ -135,7 +145,7 @@ if __name__ == '__main__':
             img_name = imgid_name[annot["image_id"]]
             img_path = os.path.join(args.imgs_folder, img_name)
             img_name = img_name.split(".")[0] # remove jpg affix
-            if img_name != "000000000785": continue
+            # if img_name != "000000013201": continue
             formatted_bbox = format_bbox(annot["bbox"])
             # formatted_bbox = format_bbox([0,0,*imgid_dims[annot["image_id"]]])
             img, norm_img = process_image(img_path, formatted_bbox)
@@ -148,11 +158,18 @@ if __name__ == '__main__':
                 output_json["betas"] = pred_betas.cpu().tolist()[0]
                 output_json["poses"] = rotMat2Quat(pred_rotmat[0].cpu().numpy())
                 output_json["camera_trans"] = torch.stack([pred_camera[:,1], pred_camera[:,2], 2*constants.FOCAL_LENGTH/(constants.IMG_RES * pred_camera[:,0] +1e-9)],dim=-1)[0].cpu().tolist()
+                output_json["area"] = annot["area"]
                 output_json["bbox_center_percent"] = [formatted_bbox[0][0]/w, 1-formatted_bbox[0][1]/h]
-
+                outputs.append(output_json)
                 # write output
-                with open(os.path.join(args.output_folder, img_name+".json"), "w", encoding="utf-8") as f:
-                    print("Writing result json:"+img_name)
+                with open(os.path.join(os.path.join(args.output_folder, dataset_name), \
+                            img_name+".json"), "w", encoding="utf-8") as f:
+                    # print("Writing result json:"+img_name)
                     json.dump(output_json, f, indent=4)
-                    break
+
+    # a single large file for storing all outputs
+    outputs_json["SPIN_outputs"] = outputs
+    with open(os.path.join(os.path.join(args.output_folder, dataset_name), \
+                "all_spin_outputs.json"), "w", encoding="utf-8") as f:
+        json.dump(outputs_json, f, indent=4)
 #

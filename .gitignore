@@ -120,3 +120,6 @@ data/*
 
 # ignore prior.py from smplify-x repo
 smplify/prior.py
+
+# ignore spinoutput jsons
+COCO_SPINoutput/*
