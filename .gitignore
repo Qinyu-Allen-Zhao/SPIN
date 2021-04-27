@@ -122,4 +122,5 @@ data/*
 smplify/prior.py
 
 # ignore spinoutput jsons
-COCO_SPINoutput/*
+COCO_SPINoutput_single/*
+COCO_SPINoutput_crowd/*
