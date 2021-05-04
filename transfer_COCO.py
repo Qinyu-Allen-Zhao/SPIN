@@ -9,6 +9,7 @@ python3 transfer_COCO.py --checkpoint=data/model_checkpoint.pt --annotation=/hom
 python3 transfer_COCO.py --checkpoint=data/model_checkpoint.pt --annotation=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/annotations/person_keypoints_train2017.json --imgs_folder=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/images/train2017
 
 python3 transfer_COCO.py --output_folder=COCO_SPINoutput_crowd --checkpoint=data/model_checkpoint.pt --annotation=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/annotations/person_keypoints_val2017.json --imgs_folder=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/images/val2017 --crowd_imgs
+python3 transfer_COCO.py --output_folder=COCO_SPINoutput_crowd --checkpoint=data/model_checkpoint.pt --annotation=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/annotations/person_keypoints_train2017.json --imgs_folder=/home/harold/Desktop/torchProjects/HPE_HRNET/data/coco/images/train2017 --crowd_imgs
 """
 
 import torch
@@ -194,7 +195,7 @@ if __name__ == '__main__':
         # a single large file for storing all outputs
         outputs_json["SPIN_outputs"] = outputs
         with open(os.path.join(args.output_folder, \
-                    "all_spin_outputs.json"), "w", encoding="utf-8") as f:
+                    "all_spin_outputs_{}.json".format(dataset_name)), "w", encoding="utf-8") as f:
             json.dump(outputs_json, f, indent=4)
     else:
         outputs_tmpt = dict()
@@ -237,6 +238,7 @@ if __name__ == '__main__':
         outputs_json = {
             "dataset": dataset_name,
             "single_person": False,
+            "max_persons_no": None,
             "SPIN_outputs": [],
         }
         max_persons, max_name = (-1, None)
@@ -252,6 +254,7 @@ if __name__ == '__main__':
             outputs_json["SPIN_outputs"].append(output)
         print("There are at most {} persons in single image, for example {}".format(max_persons, max_name))
         with open(os.path.join(args.output_folder, \
-                    "all_spin_outputs.json"), "w", encoding="utf-8") as f:
+                    "all_spin_outputs_{}.json".format(dataset_name)), "w", encoding="utf-8") as f:
+            outputs_json["max_persons_no"] = max_persons
             json.dump(outputs_json, f, indent=4)
 #
